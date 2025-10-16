@@ -1,0 +1,2021 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>道路交通量快速估算系统</title>
+  <!-- 引入外部资源 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  
+  <!-- Tailwind配置 -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#165DFF',
+            secondary: '#36CFC9',
+            neutral: '#F5F7FA',
+            dark: '#1D2129',
+            light: '#F2F3F5',
+            warning: '#FF7D00',
+            danger: '#F53F3F',
+            success: '#00B42A'
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          },
+          boxShadow: {
+            'card': '0 4px 12px rgba(0, 0, 0, 0.08)',
+            'hover': '0 8px 24px rgba(0, 0, 0, 0.12)',
+          }
+        },
+      }
+    }
+  </script>
+  
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .content-auto {
+        content-visibility: auto;
+      }
+      .transition-all-300 {
+        transition: all 300ms ease-in-out;
+      }
+      .card-transition {
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+      }
+      .step-active {
+        @apply bg-primary text-white border-primary;
+      }
+      .step-inactive {
+        @apply bg-white text-gray-400 border-gray-200;
+      }
+      .step-completed {
+        @apply bg-primary/10 text-primary border-primary/30;
+      }
+      /* PDF样式 */
+      .pdf-container {
+        display: none;
+        padding: 40px;
+        background-color: white;
+        width: 210mm;
+        min-height: 297mm;
+        margin: 0 auto;
+      }
+      .pdf-header {
+        text-align: center;
+        margin-bottom: 30px;
+      }
+      .pdf-title {
+        font-size: 24px;
+        font-weight: bold;
+        margin-bottom: 10px;
+      }
+      .pdf-subtitle {
+        font-size: 14px;
+        color: #666;
+      }
+      .pdf-section {
+        margin-bottom: 25px;
+      }
+      .pdf-section-title {
+        font-size: 18px;
+        font-weight: bold;
+        margin-bottom: 15px;
+        padding-bottom: 5px;
+        border-bottom: 1px solid #ccc;
+      }
+      .pdf-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 15px;
+      }
+      .pdf-table th, .pdf-table td {
+        border: 1px solid #ccc;
+        padding: 8px 12px;
+        text-align: left;
+        font-size: 14px;
+      }
+      .pdf-table th {
+        background-color: #f5f5f5;
+        font-weight: bold;
+      }
+      .pdf-result {
+        text-align: center;
+        padding: 20px;
+        margin: 20px 0;
+        border: 1px solid #eee;
+      }
+      .pdf-result-value {
+        font-size: 28px;
+        font-weight: bold;
+        color: #165DFF;
+        margin: 10px 0;
+      }
+      .pdf-footer {
+        margin-top: 40px;
+        text-align: center;
+        font-size: 12px;
+        color: #666;
+      }
+      .disabled-row {
+        opacity: 0.6;
+        pointer-events: none;
+      }
+      .calculation-step {
+        margin-bottom: 15px;
+      }
+      .calculation-step-title {
+        font-weight: bold;
+        margin-bottom: 8px;
+      }
+      .calculation-step-content {
+        margin-left: 20px;
+      }
+      .calculation-step-content li {
+        margin-bottom: 5px;
+      }
+    }
+  </style>
+</head>
+
+<body class="bg-gray-50 font-sans text-dark">
+  <!-- 顶部导航 -->
+  <header class="bg-white shadow-sm sticky top-0 z-50">
+    <div class="container mx-auto px-4 py-4 flex items-center justify-between">
+      <div class="flex items-center space-x-2">
+        <i class="fa fa-road text-primary text-2xl"></i>
+        <h1 class="text-xl font-bold text-primary">道路交通量快速估算系统</h1>
+      </div>
+      <div class="text-sm text-gray-500">
+        <span id="version">v1.0.0</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container mx-auto px-4 py-8 max-w-5xl">
+    <!-- 项目选择界面 -->
+    <section id="project-selection" class="py-8">
+      <div class="text-center mb-10">
+        <h2 class="text-[clamp(1.5rem,3vw,2.5rem)] font-bold mb-3">请选择项目类型</h2>
+        <p class="text-gray-500 max-w-2xl mx-auto">选择您需要进行交通量估算的项目类型，系统将根据不同类型提供相应的参数设置</p>
+      </div>
+      
+      <div class="grid md:grid-cols-2 gap-8">
+        <!-- 公路项目卡片 -->
+        <div class="bg-white rounded-xl shadow-card p-6 card-transition hover:shadow-hover hover:-translate-y-1 cursor-pointer" id="highway-card">
+          <div class="flex items-center mb-4">
+            <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mr-4">
+              <i class="fa fa-highway text-primary text-xl"></i>
+            </div>
+            <h3 class="text-xl font-semibold">公路项目</h3>
+          </div>
+          <p class="text-gray-600 mb-4">适用于高速公路、一至四级公路的交通量估算，基于《公路工程技术标准》进行计算</p>
+          <ul class="text-gray-500 space-y-1 mb-6">
+            <li class="flex items-center"><i class="fa fa-check-circle text-primary mr-2 text-sm"></i>高速公路</li>
+            <li class="flex items-center"><i class="fa fa-check-circle text-primary mr-2 text-sm"></i>一级至四级公路</li>
+            <li class="flex items-center"><i class="fa fa-check-circle text-primary mr-2 text-sm"></i>年平均日交通量(pcu/d)</li>
+          </ul>
+          <button class="w-full py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-all-300 font-medium" onclick="selectProject('highway')">
+            选择公路项目
+          </button>
+        </div>
+        
+        <!-- 市政道路项目卡片 -->
+        <div class="bg-white rounded-xl shadow-card p-6 card-transition hover:shadow-hover hover:-translate-y-1 cursor-pointer" id="municipal-card">
+          <div class="flex items-center mb-4">
+            <div class="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center mr-4">
+              <i class="fa fa-map-signs text-secondary text-xl"></i>
+            </div>
+            <h3 class="text-xl font-semibold">市政道路项目</h3>
+          </div>
+          <p class="text-gray-600 mb-4">适用于城市快速路、主次干路及支路的交通量估算，参考《道路工程设计规范》</p>
+          <ul class="text-gray-500 space-y-1 mb-6">
+            <li class="flex items-center"><i class="fa fa-check-circle text-secondary mr-2 text-sm"></i>城市快速路</li>
+            <li class="flex items-center"><i class="fa fa-check-circle text-secondary mr-2 text-sm"></i>主干路、次干路、支路</li>
+            <li class="flex items-center"><i class="fa fa-check-circle text-secondary mr-2 text-sm"></i>高峰小时交通量(pcu/h)</li>
+          </ul>
+          <button class="w-full py-3 bg-secondary text-white rounded-lg hover:bg-secondary/90 transition-all-300 font-medium" onclick="selectProject('municipal')">
+            选择市政道路项目
+          </button>
+        </div>
+      </div>
+    </section>
+    
+    <!-- 参数输入界面 -->
+    <section id="parameter-input" class="hidden">
+      <!-- 进度指示器 -->
+      <div class="mb-8">
+        <div class="flex justify-between items-center max-w-3xl mx-auto">
+          <div class="flex flex-col items-center">
+            <div id="step1-indicator" class="w-10 h-10 rounded-full border-2 step-active flex items-center justify-center mb-2">
+              <span>1</span>
+            </div>
+            <span class="text-sm font-medium">基础设置</span>
+          </div>
+          <div class="flex-1 max-w-[80px] h-1 bg-gray-200 mx-2">
+            <div id="progress-1-2" class="h-full bg-primary transition-all duration-500" style="width: 0%"></div>
+          </div>
+          <div class="flex flex-col items-center">
+            <div id="step2-indicator" class="w-10 h-10 rounded-full border-2 step-inactive flex items-center justify-center mb-2">
+              <span>2</span>
+            </div>
+            <span class="text-sm font-medium">道路属性</span>
+          </div>
+          <div class="flex-1 max-w-[80px] h-1 bg-gray-200 mx-2">
+            <div id="progress-2-3" class="h-full bg-primary transition-all duration-500" style="width: 0%"></div>
+          </div>
+          <div class="flex flex-col items-center">
+            <div id="step3-indicator" class="w-10 h-10 rounded-full border-2 step-inactive flex items-center justify-center mb-2">
+              <span>3</span>
+            </div>
+            <span class="text-sm font-medium">高级参数</span>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 步骤表单容器 -->
+      <div class="bg-white rounded-xl shadow-card p-6 md:p-8">
+        <!-- 步骤1：基础设置 -->
+        <div id="step1" class="space-y-6">
+          <h2 class="text-xl font-bold mb-4">基础设置</h2>
+          
+          <div class="grid md:grid-cols-2 gap-6">
+            <!-- 预测偏好 -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1" for="prediction-preference">
+                预测偏好 <span class="text-danger">*</span>
+              </label>
+              <select id="prediction-preference" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all-300">
+                <option value="conservative">保守 (0%-33%)</option>
+                <option value="moderate" selected>适中 (34%-66%)</option>
+                <option value="aggressive">激进 (67%-100%)</option>
+              </select>
+              <p class="mt-1 text-xs text-gray-500">选择预测交通量的取值区间范围</p>
+            </div>
+            
+            <!-- 道路等级 -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1" for="road-class">
+                道路等级 <span class="text-danger">*</span>
+              </label>
+              <select id="road-class" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all-300" onchange="updateDesignSpeedOptions()">
+                <!-- 由JavaScript动态填充 -->
+              </select>
+              <p class="mt-1 text-xs text-gray-500" id="road-class-desc">选择道路的等级类型</p>
+            </div>
+            
+            <!-- 设计速度 -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1" for="design-speed">
+                设计速度 (km/h) <span class="text-danger">*</span>
+              </label>
+              <select id="design-speed" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all-300" onchange="updateDefaultServiceLevel()">
+                <!-- 由JavaScript动态填充 -->
+              </select>
+              <p class="mt-1 text-xs text-gray-500">道路的设计速度，影响通行能力计算</p>
+            </div>
+            
+            <!-- 服务水平 -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1" for="service-level">
+                预期服务水平 <span class="text-danger">*</span>
+              </label>
+              <select id="service-level" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all-300" onchange="updateSaturationRange()">
+                <!-- 由JavaScript动态填充 -->
+              </select>
+              <p class="mt-1 text-xs text-gray-500" id="service-level-desc">服务水平决定交通饱和度范围</p>
+            </div>
+          </div>
+          
+          <div class="pt-4 flex justify-between">
+            <button id="back-to-project" class="px-6 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-all-300 font-medium" onclick="resetAll()">
+              <i class="fa fa-arrow-left mr-1"></i> 返回项目选择
+            </button>
+            <button id="to-step2" class="px-6 py-2.5 bg-primary text-white rounded-lg hover:bg-primary/90 transition-all-300 font-medium" onclick="goToStep(2)">
+              下一步 <i class="fa fa-arrow-right ml-1"></i>
+            </button>
+          </div>
+        </div>
+        
+        <!-- 步骤2：道路属性 -->
+        <div id="step2" class="space-y-6 hidden">
+          <h2 class="text-xl font-bold mb-4">道路属性</h2>
+          
+          <div class="grid md:grid-cols-2 gap-6">
+            <!-- 设计车道数 -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1" for="lane-count">
+                设计车道数 <span class="text-danger">*</span>
+              </label>
+              <select id="lane-count" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all-300" onchange="updateLaneCountReduction()">
+                <option value="2">两车道</option>
+                <option value="4" selected>四车道</option>
+                <option value="6">六车道</option>
+                <option value="8">八车道</option>
+              </select>
+              <p class="mt-1 text-xs text-gray-500">道路设计的车道数量</p>
+            </div>
+            
+            <!-- 设计车道宽度 -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1" for="lane-width">
+                设计车道宽度 (米) <span class="text-danger">*</span>
+              </label>
+              <select id="lane-width" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all-300" onchange="updateLaneWidthReduction()">
+                <!-- 由JavaScript动态填充 -->
+              </select>
+              <p class="mt-1 text-xs text-gray-500">单条车道的设计宽度</p>
+            </div>
+            
+            <!-- 大车率 -->
+            <div id="truck-rate-container">
+              <label class="block text-sm font-medium text-gray-700 mb-1" for="truck-rate">
+                大车率 (%) <span class="text-danger" id="truck-rate-required">*</span>
+              </label>
+              <div class="relative">
+                <input type="number" id="truck-rate" min="0" max="50" step="0.1" value="5.0" 
+                  class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all-300"
+                  oninput="validateTruckRate()" onchange="updateTruckReduction()">
+                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">%</span>
+              </div>
+              <p id="truck-rate-error" class="mt-1 text-xs text-danger hidden">请输入0-50之间的数值</p>
+              <p class="mt-1 text-xs text-gray-500" id="truck-rate-hint">大型车辆占总交通量的比例</p>
+            </div>
+            
+            <!-- 平均灯控间距 -->
+            <div id="signal-spacing-container">
+              <label class="block text-sm font-medium text-gray-700 mb-1" for="signal-spacing">
+                平均灯控间距 (米) <span class="text-danger" id="signal-spacing-required">*</span>
+              </label>
+              <div class="relative">
+                <input type="number" id="signal-spacing" min="150" max="1500" value="300" 
+                  class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all-300"
+                  oninput="validateSignalSpacing()" onchange="updateSignalReduction()">
+                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">m</span>
+              </div>
+              <p id="signal-spacing-error" class="mt-1 text-xs text-danger hidden">请输入150-1500之间的整数</p>
+              <p class="mt-1 text-xs text-gray-500" id="signal-spacing-hint">平均信号灯控制间距</p>
+            </div>
+          </div>
+          
+          <div class="pt-4 flex justify-between">
+            <button class="px-6 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-all-300 font-medium" onclick="goToStep(1)">
+              <i class="fa fa-arrow-left mr-1"></i> 上一步
+            </button>
+            <button id="to-step3" class="px-6 py-2.5 bg-primary text-white rounded-lg hover:bg-primary/90 transition-all-300 font-medium" onclick="goToStep(3)">
+              下一步 <i class="fa fa-arrow-right ml-1"></i>
+            </button>
+          </div>
+        </div>
+        
+        <!-- 步骤3：高级参数 -->
+        <div id="step3" class="space-y-6 hidden">
+          <h2 class="text-xl font-bold mb-4">高级参数</h2>
+          <p class="text-sm text-gray-500 mb-6">以下为系统默认参数，高级用户可根据实际情况进行调整</p>
+          
+          <div class="space-y-6">
+            <!-- 通行能力信息 -->
+            <div class="bg-neutral p-4 rounded-lg">
+              <h3 class="font-medium mb-2 flex items-center">
+                <i class="fa fa-info-circle text-primary mr-2"></i> 基准通行能力
+              </h3>
+              <p class="text-sm text-gray-600" id="capacity-info">--</p>
+            </div>
+            
+            <!-- 方向分布系数 -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1" for="direction-factor">
+                方向分布系数
+              </label>
+              <div class="relative">
+                <input type="number" id="direction-factor" min="0.5" max="0.6" step="0.01" value="0.52" 
+                  class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all-300"
+                  oninput="validateDirectionFactor()">
+              </div>
+              <p id="direction-factor-error" class="mt-1 text-xs text-danger hidden">请输入0.5-0.6之间的数值</p>
+              <p class="mt-1 text-xs text-gray-500">交通量在道路两个方向上的分配比例，默认0.52</p>
+            </div>
+            
+            <!-- 高峰小时系数 -->
+            <div id="peak-hour-factor-container">
+              <label class="block text-sm font-medium text-gray-700 mb-1" for="peak-hour-factor">
+                高峰小时系数
+              </label>
+              <div class="relative">
+                <input type="number" id="peak-hour-factor" min="0.08" max="0.16" step="0.01" value="0.1" 
+                  class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all-300"
+                  oninput="validatePeakHourFactor()">
+              </div>
+              <p id="peak-hour-factor-error" class="mt-1 text-xs text-danger hidden">请输入0.08-0.16之间的数值</p>
+              <p class="mt-1 text-xs text-gray-500">高峰小时交通量占全日交通量的比例，默认0.1</p>
+            </div>
+            
+            <!-- 交通饱和度范围 -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">
+                交通饱和度范围
+              </label>
+              <div class="grid grid-cols-2 gap-4">
+                <div class="relative">
+                  <input type="number" id="saturation-min" step="0.01" 
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all-300"
+                    oninput="validateSaturationMin()">
+                </div>
+                <div class="relative">
+                  <input type="number" id="saturation-max" step="0.01" 
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all-300"
+                    oninput="validateSaturationMax()">
+                </div>
+              </div>
+              <p id="saturation-error" class="mt-1 text-xs text-danger hidden">最小值必须小于等于最大值</p>
+              <p class="mt-1 text-xs text-gray-500">目标服务水平对应的交通饱和度范围</p>
+            </div>
+            
+            <!-- 折减系数 -->
+            <div class="mt-6">
+              <h3 class="font-medium mb-4">折减系数</h3>
+              <div class="grid md:grid-cols-2 gap-4">
+                <div id="road-type-reduction-container">
+                  <label class="block text-sm font-medium text-gray-700 mb-1">
+                    道路分类折减系数
+                  </label>
+                  <input type="number" id="road-type-reduction" step="0.01" readonly
+                    class="w-full px-4 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600">
+                </div>
+                
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">
+                    车道数折减系数
+                  </label>
+                  <input type="number" id="lane-count-reduction" step="0.01" readonly
+                    class="w-full px-4 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600">
+                </div>
+                
+                <div id="lane-width-reduction-container">
+                  <label class="block text-sm font-medium text-gray-700 mb-1">
+                    车道宽度折减系数
+                  </label>
+                  <input type="number" id="lane-width-reduction" step="0.01" readonly
+                    class="w-full px-4 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600">
+                </div>
+                
+                <div id="truck-reduction-container">
+                  <label class="block text-sm font-medium text-gray-700 mb-1">
+                    大车率折减系数
+                  </label>
+                  <div class="grid grid-cols-2 gap-2">
+                    <input type="number" id="truck-reduction" step="0.01" readonly
+                      class="w-full px-4 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600">
+                    <div>
+                      <label class="block text-xs text-gray-500 mb-1">大车折算系数</label>
+                      <input type="number" id="truck-conversion" min="1" step="0.1" value="2.5"
+                        class="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all-300"
+                        onchange="updateTruckReduction()">
+                    </div>
+                  </div>
+                </div>
+                
+                <div id="signal-reduction-container" class="md:col-span-2">
+                  <label class="block text-sm font-medium text-gray-700 mb-1">
+                    平均灯控间距折减系数
+                  </label>
+                  <input type="number" id="signal-reduction" step="0.01" readonly
+                    class="w-full px-4 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600">
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="pt-4 flex justify-between">
+            <button class="px-6 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-all-300 font-medium" onclick="goToStep(2)">
+              <i class="fa fa-arrow-left mr-1"></i> 上一步
+            </button>
+            <button id="calculate" class="px-6 py-2.5 bg-primary text-white rounded-lg hover:bg-primary/90 transition-all-300 font-medium" onclick="calculateTrafficVolume()">
+              计算交通量 <i class="fa fa-calculator ml-1"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+    
+    <!-- 结果展示界面 -->
+    <section id="result-display" class="hidden">
+      <div class="bg-white rounded-xl shadow-card p-6 md:p-8 mb-6">
+        <div class="flex justify-between items-center mb-6">
+          <h2 class="text-xl font-bold">交通量估算结果</h2>
+          <button class="text-sm text-primary hover:text-primary/80 transition-all-300 flex items-center" onclick="modifyParameters()">
+            <i class="fa fa-pencil mr-1"></i> 修改参数
+          </button>
+        </div>
+        
+        <!-- 项目信息摘要 -->
+        <div class="grid md:grid-cols-3 gap-4 mb-8 text-sm">
+          <div class="bg-neutral p-3 rounded-lg">
+            <p class="text-gray-500">项目类型</p>
+            <p class="font-medium" id="result-project-type">--</p>
+          </div>
+          <div class="bg-neutral p-3 rounded-lg">
+            <p class="text-gray-500">道路等级</p>
+            <p class="font-medium" id="result-road-class">--</p>
+          </div>
+          <div class="bg-neutral p-3 rounded-lg">
+            <p class="text-gray-500">设计速度</p>
+            <p class="font-medium" id="result-design-speed">--</p>
+          </div>
+          <div class="bg-neutral p-3 rounded-lg">
+            <p class="text-gray-500">服务水平</p>
+            <p class="font-medium" id="result-service-level">--</p>
+          </div>
+          <div class="bg-neutral p-3 rounded-lg">
+            <p class="text-gray-500">设计车道数</p>
+            <p class="font-medium" id="result-lane-count">--</p>
+          </div>
+          <div class="bg-neutral p-3 rounded-lg">
+            <p class="text-gray-500">预测偏好</p>
+            <p class="font-medium" id="result-preference">--</p>
+          </div>
+        </div>
+        
+        <!-- 主要结果 -->
+        <div class="text-center mb-8">
+          <div class="inline-block p-1 bg-gradient-to-r from-primary to-secondary rounded-xl mb-4">
+            <div class="bg-white p-6 md:p-8 rounded-lg">
+              <p class="text-gray-500 mb-2">预测交通量区间</p>
+              <div class="flex items-baseline justify-center">
+                <span id="result-traffic-min" class="text-3xl md:text-4xl font-bold text-primary">0</span>
+                <span class="mx-2 text-gray-400">~</span>
+                <span id="result-traffic-max" class="text-3xl md:text-4xl font-bold text-primary">0</span>
+                <span id="result-unit" class="ml-2 text-xl text-gray-600">pcu/d</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- 参考范围提示 -->
+        <div id="reference-range" class="mb-8 p-4 rounded-lg bg-blue-50 border border-blue-100 hidden">
+          <h3 class="font-medium text-primary mb-2 flex items-center">
+            <i class="fa fa-info-circle mr-2"></i> 参考范围
+          </h3>
+          <p class="text-sm text-gray-600" id="reference-range-text">--</p>
+        </div>
+        
+        <!-- 结果图表 -->
+        <div class="mb-8">
+          <h3 class="font-medium mb-4">交通量区间可视化</h3>
+          <div class="h-40">
+            <canvas id="result-chart"></canvas>
+          </div>
+        </div>
+        
+        <!-- 操作按钮 -->
+        <div class="flex flex-wrap gap-4 justify-center">
+          <button class="px-6 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-all-300 font-medium" onclick="resetAll()">
+            <i class="fa fa-refresh mr-1"></i> 重新开始
+          </button>
+          <button class="px-6 py-2.5 bg-secondary text-white rounded-lg hover:bg-secondary/90 transition-all-300 font-medium" onclick="showCalculationDetails()">
+            <i class="fa fa-list-ol mr-1"></i> 查看计算明细
+          </button>
+          <button class="px-6 py-2.5 bg-primary text-white rounded-lg hover:bg-primary/90 transition-all-300 font-medium" onclick="exportReport()">
+            <i class="fa fa-download mr-1"></i> 导出报告
+          </button>
+        </div>
+      </div>
+      
+      <!-- 计算明细模态框 -->
+      <div id="details-modal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center hidden">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[80vh] overflow-y-auto">
+          <div class="p-6 border-b">
+            <div class="flex justify-between items-center">
+              <h3 class="text-xl font-bold">计算明细</h3>
+              <button class="text-gray-500 hover:text-gray-700" onclick="hideCalculationDetails()">
+                <i class="fa fa-times text-xl"></i>
+              </button>
+            </div>
+          </div>
+          <div class="p-6 space-y-6" id="calculation-details">
+            <!-- 由JavaScript动态填充 -->
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  
+  <!-- 用于生成PDF的隐藏容器 -->
+  <div id="pdf-container" class="pdf-container">
+    <div class="pdf-header">
+      <div class="pdf-title">道路交通量快速估算报告</div>
+      <div class="pdf-subtitle" id="pdf-date">报告生成日期：YYYY年MM月DD日</div>
+    </div>
+    
+    <div class="pdf-section">
+      <div class="pdf-section-title">一、项目基本信息</div>
+      <table class="pdf-table" id="pdf-project-info">
+        <!-- 由JavaScript动态填充 -->
+      </table>
+    </div>
+    
+    <div class="pdf-section">
+      <div class="pdf-section-title">二、计算参数</div>
+      <table class="pdf-table" id="pdf-parameters">
+        <!-- 由JavaScript动态填充 -->
+      </table>
+    </div>
+    
+    <div class="pdf-section">
+      <div class="pdf-section-title">三、估算结果</div>
+      <div class="pdf-result">
+        <div>预测交通量区间</div>
+        <div class="pdf-result-value" id="pdf-result-value">0 ~ 0 pcu/d</div>
+      </div>
+      <div id="pdf-reference-range" class="mt-4 text-sm">
+        <!-- 由JavaScript动态填充 -->
+      </div>
+    </div>
+    
+    <div class="pdf-section">
+      <div class="pdf-section-title">四、详细计算过程</div>
+      <div id="pdf-calculation-steps" class="text-sm">
+        <!-- 由JavaScript动态填充 -->
+      </div>
+    </div>
+    
+    <div class="pdf-footer">
+      <p>道路交通量快速估算系统 © 2023</p>
+      <p>参考标准：《公路工程技术标准》、《道路工程设计规范》、《HCM2000》</p>
+    </div>
+  </div>
+  
+  <footer class="bg-white border-t mt-12 py-6">
+    <div class="container mx-auto px-4 text-center text-gray-500 text-sm">
+      <p>道路交通量快速估算系统 © 2023</p>
+      <p class="mt-1">参考标准：《公路工程技术标准》、《道路工程设计规范》、《HCM2000》</p>
+    </div>
+  </footer>
+
+  <script>
+    // 全局变量
+    let projectType = '';
+    let currentStep = 1;
+    let chart = null;
+    let calculationSteps = []; // 保存计算步骤用于PDF导出
+    
+    // 项目类型相关配置 - 重点更新了服务水平与交通饱和度对应关系
+    const projectConfigs = {
+      highway: {
+        roadClasses: [
+          { value: 'expressway', text: '高速公路', speeds: [120, 100, 80] },
+          { value: 'class1', text: '一级公路', speeds: [100, 80, 60] },
+          { value: 'class2', text: '二级公路', speeds: [80, 60, 40] },
+          { value: 'class3', text: '三级公路', speeds: [40, 30] },
+          { value: 'class4', text: '四级公路', speeds: [20] }
+        ],
+        laneWidths: [3.5, 3.75, 4],
+        serviceLevels: [
+          { value: 'level1', text: '一级服务水平' },
+          { value: 'level2', text: '二级服务水平' },
+          { value: 'level3', text: '三级服务水平' },
+          { value: 'level4', text: '四级服务水平' }
+        ],
+        // 基准通行能力 (pcu/h/车道)
+        baseCapacities: {
+          expressway: { 120: 2200, 100: 2100, 80: 2000 },
+          class1: { 100: 2000, 80: 1800, 60: 1600 },
+          class2: { 80: 1400, 60: 1250, 40: 1200 },
+          class3: { 40: 700, 30: 400 },
+          class4: { 20: 300 }
+        },
+        // 服务水平对应的交通饱和度范围 - 根据需求更新
+        saturationLevels: {
+          expressway: {
+            level3: { min: 0.55, max: 0.75 }  // 高速公路三级服务水平
+          },
+          class1: {
+            level3: { min: 0.5, max: 0.7 },    // 一级公路三级服务水平
+            level4: { min: 0.7, max: 0.9 }     // 一级公路四级服务水平
+          },
+          class2: {
+            level4: { 
+              80: { min: 0.4, max: 0.64 },     // 二级公路四级服务水平(80设计速度)
+              60: { min: 0.38, max: 0.58 },    // 二级公路四级服务水平(60设计速度)
+              40: { min: 0.37, max: 0.54 }     // 二级公路四级服务水平(40设计速度)
+            }
+          },
+          class3: {
+            level4: { 
+              40: { min: 0.37, max: 0.54 },    // 三级公路四级服务水平(40设计速度)
+              30: { min: 0.37, max: 0.54 }     // 三级公路四级服务水平(30设计速度)
+            }
+          },
+          class4: {
+            level4: { 
+              20: { min: 0.37, max: 0.54 }     // 四级公路四级服务水平(20设计速度)
+            }
+          }
+        },
+        // 道路等级默认服务水平
+        defaultServiceLevel: {
+          expressway: 'level3',
+          class1: 'level3',
+          class2: 'level4',
+          class3: 'level4',
+          class4: 'level4'
+        },
+        // 交通量参考范围 (pcu/d)
+        referenceRanges: {
+          expressway: '高速公路预测交通量原则上不低于15000 pcu/d',
+          class1: '一级公路预测交通量原则上不低于15000 pcu/d',
+          class2: '二级公路预测交通量一般介于5000至15000 pcu/d',
+          class3: '三级公路预测交通量一般介于2000至6000 pcu/d',
+          class4: '四级公路预测交通量一般小于2000 pcu/d'
+        }
+      },
+      municipal: {
+        roadClasses: [
+          { value: 'express', text: '城市快速路', speeds: [100, 80, 60] },
+          { value: 'arterial', text: '城市主干路', speeds: [60, 50, 40, 30] },
+          { value: 'collector', text: '城市次干路', speeds: [50, 40, 30, 20] },
+          { value: 'local', text: '城市支路', speeds: [40, 30, 20] }
+        ],
+        laneWidths: [3, 3.25, 3.5, 3.75],
+        serviceLevels: [
+          { value: 'level1', text: '一级服务水平' },
+          { value: 'level2', text: '二级服务水平' },
+          { value: 'level3', text: '三级服务水平' },
+          { value: 'level4', text: '四级服务水平' },
+          { value: 'A', text: 'A级服务水平' },
+          { value: 'B', text: 'B级服务水平' },
+          { value: 'C', text: 'C级服务水平' },
+          { value: 'D', text: 'D级服务水平' },
+          { value: 'E', text: 'E级服务水平' },
+          { value: 'F', text: 'F级服务水平' }
+        ],
+        // 基本通行能力 (pcu/h/车道)
+        baseCapacities: {
+          express: { 100: 2200, 80: 2100, 60: 1800 },
+          arterial: { 60: 1800, 50: 1700, 40: 1650, 30: 1600, 20: 1400 },
+          collector: { 60: 1800, 50: 1700, 40: 1650, 30: 1600, 20: 1400 },
+          local: { 60: 1800, 50: 1700, 40: 1650, 30: 1600, 20: 1400 }
+        },
+        // 服务水平对应的交通饱和度范围 - 根据需求更新
+        saturationLevels: {
+          express: {
+            level3: {
+              100: { min: 0.69, max: 0.91 },   // 城市快速路三级服务水平(100设计速度)
+              80: { min: 0.61, max: 0.83 },    // 城市快速路三级服务水平(80设计速度)
+              60: { min: 0.55, max: 0.77 }     // 城市快速路三级服务水平(60设计速度)
+            }
+          },
+          arterial: {
+            C: { min: 0.6, max: 0.75 },        // 城市主干路C级服务水平
+            D: { min: 0.75, max: 0.9 }         // 城市主干路D级服务水平
+          },
+          collector: {
+            C: { min: 0.6, max: 0.75 },        // 城市次干路C级服务水平
+            D: { min: 0.75, max: 0.9 }         // 城市次干路D级服务水平
+          },
+          local: {
+            C: { min: 0.6, max: 0.75 },        // 城市支路C级服务水平
+            D: { min: 0.75, max: 0.9 }         // 城市支路D级服务水平
+          }
+        },
+        // 道路等级默认服务水平
+        defaultServiceLevel: {
+          express: 'level3',
+          arterial: 'D',
+          collector: 'D',
+          local: 'D'
+        },
+        // 道路分类折减系数
+        roadTypeReduction: {
+          express: 0.75,
+          arterial: 0.8,
+          collector: 0.85,
+          local: 0.9
+        }
+      }
+    };
+    
+    // 车道数折减系数
+    const laneCountReduction = {
+      2: 1.0,
+      4: 1.8,
+      6: 2.55,
+      8: 3.2
+    };
+    
+    // 市政道路车道宽度折减系数
+    const laneWidthReduction = {
+      3: 0.85,
+      3.25: 0.94,
+      3.5: 1,
+      3.75: 1
+    };
+    
+    // 初始化函数
+    document.addEventListener('DOMContentLoaded', function() {
+      // 显示提示文本
+      document.getElementById('truck-rate-hint').classList.remove('hidden');
+      document.getElementById('signal-spacing-hint').classList.remove('hidden');
+    });
+    
+    // 选择项目类型
+    function selectProject(type) {
+      projectType = type;
+      
+      // 更新UI
+      if (type === 'highway') {
+        document.getElementById('highway-card').classList.add('ring-2', 'ring-primary');
+        document.getElementById('municipal-card').classList.remove('ring-2', 'ring-primary');
+      } else {
+        document.getElementById('municipal-card').classList.add('ring-2', 'ring-secondary');
+        document.getElementById('highway-card').classList.remove('ring-2', 'ring-primary');
+      }
+      
+      // 填充道路等级选项
+      populateRoadClasses();
+      
+      // 根据项目类型设置参数可见性和可用性
+      setParameterAvailability();
+      
+      // 显示参数输入界面
+      showSection('parameter-input');
+      hideSection('project-selection');
+    }
+    
+    // 根据项目类型设置参数可用性
+    function setParameterAvailability() {
+      // 步骤2参数处理
+      const truckRateContainer = document.getElementById('truck-rate-container');
+      const signalSpacingContainer = document.getElementById('signal-spacing-container');
+      const truckRate = document.getElementById('truck-rate');
+      const signalSpacing = document.getElementById('signal-spacing');
+      const truckRateRequired = document.getElementById('truck-rate-required');
+      const signalSpacingRequired = document.getElementById('signal-spacing-required');
+      
+      // 步骤3参数处理
+      const peakHourFactorContainer = document.getElementById('peak-hour-factor-container');
+      const roadTypeReductionContainer = document.getElementById('road-type-reduction-container');
+      const laneWidthReductionContainer = document.getElementById('lane-width-reduction-container');
+      const truckReductionContainer = document.getElementById('truck-reduction-container');
+      const signalReductionContainer = document.getElementById('signal-reduction-container');
+      
+      if (projectType === 'highway') {
+        // 公路项目设置 - 灰显不相关参数
+        truckRate.disabled = true;
+        signalSpacing.disabled = true;
+        truckRateContainer.classList.add('disabled-row');
+        signalSpacingContainer.classList.add('disabled-row');
+        truckRateRequired.classList.add('hidden');
+        signalSpacingRequired.classList.add('hidden');
+        
+        peakHourFactorContainer.classList.remove('hidden');
+        roadTypeReductionContainer.classList.add('hidden');
+        laneWidthReductionContainer.classList.add('hidden');
+        truckReductionContainer.classList.add('hidden');
+        signalReductionContainer.classList.add('hidden');
+      } else {
+        // 市政道路项目设置
+        truckRate.disabled = false;
+        truckRateContainer.classList.remove('disabled-row');
+        truckRateRequired.classList.remove('hidden');
+        
+        peakHourFactorContainer.classList.add('hidden');
+        roadTypeReductionContainer.classList.remove('hidden');
+        laneWidthReductionContainer.classList.remove('hidden');
+        truckReductionContainer.classList.remove('hidden');
+        
+        // 根据道路类型决定是否显示和启用相关参数
+        const roadClass = document.getElementById('road-class').value;
+        if (roadClass !== 'express') {
+          // 非城市快速路，启用平均灯控间距
+          signalSpacing.disabled = false;
+          signalSpacingContainer.classList.remove('disabled-row');
+          signalSpacingRequired.classList.remove('hidden');
+          signalReductionContainer.classList.remove('hidden');
+        } else {
+          // 城市快速路，灰显平均灯控间距
+          signalSpacing.disabled = true;
+          signalSpacingContainer.classList.add('disabled-row');
+          signalSpacingRequired.classList.add('hidden');
+          signalReductionContainer.classList.add('hidden');
+        }
+      }
+    }
+    
+    // 填充道路等级选项
+    function populateRoadClasses() {
+      const roadClassSelect = document.getElementById('road-class');
+      roadClassSelect.innerHTML = '';
+      
+      projectConfigs[projectType].roadClasses.forEach(roadClass => {
+        const option = document.createElement('option');
+        option.value = roadClass.value;
+        option.textContent = roadClass.text;
+        roadClassSelect.appendChild(option);
+      });
+      
+      // 更新设计速度选项
+      updateDesignSpeedOptions();
+    }
+    
+    // 更新设计速度选项
+    function updateDesignSpeedOptions() {
+      const roadClass = document.getElementById('road-class').value;
+      const designSpeedSelect = document.getElementById('design-speed');
+      designSpeedSelect.innerHTML = '';
+      
+      // 找到当前道路等级对应的速度选项
+      const roadConfig = projectConfigs[projectType].roadClasses.find(rc => rc.value === roadClass);
+      
+      if (roadConfig) {
+        roadConfig.speeds.forEach(speed => {
+          const option = document.createElement('option');
+          option.value = speed;
+          option.textContent = speed;
+          designSpeedSelect.appendChild(option);
+        });
+        
+        // 更新车道宽度选项
+        updateLaneWidthOptions();
+        
+        // 更新默认服务水平
+        updateDefaultServiceLevel();
+      }
+      
+      // 如果是市政道路，根据道路类型更新信号间距折减系数显示
+      if (projectType === 'municipal') {
+        updateSignalReductionVisibility();
+        // 更新参数可用性，特别是平均灯控间距的灰显状态
+        setParameterAvailability();
+      }
+    }
+    
+    // 更新车道宽度选项
+    function updateLaneWidthOptions() {
+      const laneWidthSelect = document.getElementById('lane-width');
+      laneWidthSelect.innerHTML = '';
+      
+      projectConfigs[projectType].laneWidths.forEach(width => {
+        const option = document.createElement('option');
+        option.value = width;
+        option.textContent = width;
+        laneWidthSelect.appendChild(option);
+      });
+      
+      // 默认选择中间值
+      const middleIndex = Math.floor(projectConfigs[projectType].laneWidths.length / 2);
+      laneWidthSelect.selectedIndex = middleIndex;
+      
+      // 更新车道宽度折减系数
+      updateLaneWidthReduction();
+    }
+    
+    // 更新默认服务水平
+    function updateDefaultServiceLevel() {
+      const roadClass = document.getElementById('road-class').value;
+      const defaultSL = projectConfigs[projectType].defaultServiceLevel[roadClass];
+      
+      // 填充服务水平选项
+      const serviceLevelSelect = document.getElementById('service-level');
+      serviceLevelSelect.innerHTML = '';
+      
+      projectConfigs[projectType].serviceLevels.forEach(sl => {
+        const option = document.createElement('option');
+        option.value = sl.value;
+        option.textContent = sl.text;
+        serviceLevelSelect.appendChild(option);
+      });
+      
+      // 设置默认服务水平
+      serviceLevelSelect.value = defaultSL;
+      
+      // 更新服务水平描述
+      updateServiceLevelDescription();
+      
+      // 更新交通饱和度范围
+      updateSaturationRange();
+      
+      // 更新基准通行能力信息
+      updateCapacityInfo();
+      
+      // 更新道路分类折减系数（市政道路）
+      if (projectType === 'municipal') {
+        updateRoadTypeReduction();
+      }
+      
+      // 更新信号间距折减系数显示（市政道路）
+      updateSignalReductionVisibility();
+    }
+    
+    // 更新服务水平描述
+    function updateServiceLevelDescription() {
+      const descElement = document.getElementById('service-level-desc');
+      const roadClass = document.getElementById('road-class').value;
+      
+      if (projectType === 'highway') {
+        descElement.textContent = '依据《公路工程技术标准》划分，决定交通饱和度范围';
+      } else {
+        if (roadClass === 'express') {
+          descElement.textContent = '依据《道路工程设计规范》划分，决定交通饱和度范围';
+        } else {
+          descElement.textContent = '依据美国通行能力手册《HCM2000》划分，决定交通饱和度范围';
+        }
+      }
+    }
+    
+    // 更新交通饱和度范围 - 核心更新部分
+    function updateSaturationRange() {
+      const roadClass = document.getElementById('road-class').value;
+      const designSpeed = parseInt(document.getElementById('design-speed').value);
+      const serviceLevel = document.getElementById('service-level').value;
+      
+      let saturationMin, saturationMax;
+      
+      if (projectType === 'highway') {
+        // 公路项目饱和度设置
+        if (roadClass === 'expressway') {
+          // 高速公路
+          saturationMin = projectConfigs.highway.saturationLevels[roadClass][serviceLevel].min;
+          saturationMax = projectConfigs.highway.saturationLevels[roadClass][serviceLevel].max;
+        } else if (roadClass === 'class1') {
+          // 一级公路
+          saturationMin = projectConfigs.highway.saturationLevels[roadClass][serviceLevel].min;
+          saturationMax = projectConfigs.highway.saturationLevels[roadClass][serviceLevel].max;
+        } else {
+          // 二级及以下公路
+          saturationMin = projectConfigs.highway.saturationLevels[roadClass][serviceLevel][designSpeed].min;
+          saturationMax = projectConfigs.highway.saturationLevels[roadClass][serviceLevel][designSpeed].max;
+        }
+      } else { // municipal
+        // 市政道路项目饱和度设置
+        if (roadClass === 'express') {
+          // 城市快速路
+          saturationMin = projectConfigs.municipal.saturationLevels[roadClass][serviceLevel][designSpeed].min;
+          saturationMax = projectConfigs.municipal.saturationLevels[roadClass][serviceLevel][designSpeed].max;
+        } else {
+          // 城市主干路及以下
+          saturationMin = projectConfigs.municipal.saturationLevels[roadClass][serviceLevel].min;
+          saturationMax = projectConfigs.municipal.saturationLevels[roadClass][serviceLevel].max;
+        }
+      }
+      
+      // 更新输入框
+      document.getElementById('saturation-min').value = saturationMin;
+      document.getElementById('saturation-max').value = saturationMax;
+    }
+    
+    // 更新基准通行能力信息
+    function updateCapacityInfo() {
+      const roadClass = document.getElementById('road-class').value;
+      const designSpeed = parseInt(document.getElementById('design-speed').value);
+      const capacityInfo = document.getElementById('capacity-info');
+      
+      let capacity;
+      if (projectType === 'highway') {
+        capacity = projectConfigs.highway.baseCapacities[roadClass][designSpeed];
+        capacityInfo.textContent = `单车道基准通行能力：${capacity} pcu/h（基于《公路工程技术标准》）`;
+      } else {
+        capacity = projectConfigs.municipal.baseCapacities[roadClass][designSpeed];
+        capacityInfo.textContent = `单车道基本通行能力：${capacity} pcu/h（基于《道路工程设计规范》）`;
+      }
+    }
+    
+    // 更新车道数折减系数
+    function updateLaneCountReduction() {
+      const laneCount = document.getElementById('lane-count').value;
+      const reduction = laneCountReduction[laneCount];
+      document.getElementById('lane-count-reduction').value = reduction;
+    }
+    
+    // 更新车道宽度折减系数
+    function updateLaneWidthReduction() {
+      if (projectType === 'municipal') {
+        const laneWidth = parseFloat(document.getElementById('lane-width').value);
+        const reduction = laneWidthReduction[laneWidth];
+        document.getElementById('lane-width-reduction').value = reduction;
+      }
+    }
+    
+    // 更新道路分类折减系数（市政道路）
+    function updateRoadTypeReduction() {
+      if (projectType === 'municipal') {
+        const roadClass = document.getElementById('road-class').value;
+        const reduction = projectConfigs.municipal.roadTypeReduction[roadClass];
+        document.getElementById('road-type-reduction').value = reduction;
+      }
+    }
+    
+    // 更新大车率折减系数
+    function updateTruckReduction() {
+      if (projectType === 'municipal') {
+        const truckRate = parseFloat(document.getElementById('truck-rate').value) / 100;
+        const conversionFactor = parseFloat(document.getElementById('truck-conversion').value);
+        const reduction = 1 / (1 + truckRate * (conversionFactor - 1));
+        document.getElementById('truck-reduction').value = reduction.toFixed(3);
+      }
+    }
+    
+    // 更新信号间距折减系数 - 使用新公式
+    function updateSignalReduction() {
+      if (projectType === 'municipal') {
+        const roadClass = document.getElementById('road-class').value;
+        if (roadClass !== 'express') { // 城市快速路不折减
+          const spacing = parseInt(document.getElementById('signal-spacing').value);
+          // 新公式：平均灯控间距折减系数 = 1/(1+e^x), x=-0.003*(平均灯控间距-300)
+          const x = -0.003 * (spacing - 300);
+          const reduction = 1 / (1 + Math.exp(x));
+          document.getElementById('signal-reduction').value = reduction.toFixed(3);
+        } else {
+          document.getElementById('signal-reduction').value = 1.0;
+        }
+      }
+    }
+    
+    // 更新信号间距折减系数显示
+    function updateSignalReductionVisibility() {
+      if (projectType === 'municipal') {
+        const roadClass = document.getElementById('road-class').value;
+        const signalReductionContainer = document.getElementById('signal-reduction-container');
+        
+        if (roadClass !== 'express') {
+          signalReductionContainer.classList.remove('hidden');
+        } else {
+          signalReductionContainer.classList.add('hidden');
+        }
+      }
+    }
+    
+    // 切换步骤
+    function goToStep(step) {
+      // 验证当前步骤
+      if (!validateStep(currentStep)) {
+        return;
+      }
+      
+      // 更新进度指示器
+      document.getElementById(`step${currentStep}-indicator`).className = 'w-10 h-10 rounded-full border-2 step-completed flex items-center justify-center mb-2';
+      document.getElementById(`step${step}-indicator`).className = 'w-10 h-10 rounded-full border-2 step-active flex items-center justify-center mb-2';
+      
+      // 更新进度条
+      if (step > currentStep) {
+        document.getElementById(`progress-${currentStep}-${step}`).style.width = '100%';
+      } else {
+        document.getElementById(`progress-${step}-${currentStep}`).style.width = '0%';
+      }
+      
+      // 隐藏当前步骤，显示目标步骤
+      document.getElementById(`step${currentStep}`).classList.add('hidden');
+      document.getElementById(`step${step}`).classList.remove('hidden');
+      
+      // 更新当前步骤
+      currentStep = step;
+      
+      // 根据项目类型显示/隐藏相关参数
+      if (step === 3) {
+        updateAdvancedParamsVisibility();
+      }
+    }
+    
+    // 验证当前步骤
+    function validateStep(step) {
+      let isValid = true;
+      
+      if (step === 1) {
+        // 验证基础设置
+        const requiredFields = ['prediction-preference', 'road-class', 'design-speed', 'service-level'];
+        requiredFields.forEach(field => {
+          const element = document.getElementById(field);
+          if (!element.value) {
+            element.classList.add('border-danger');
+            isValid = false;
+          } else {
+            element.classList.remove('border-danger');
+          }
+        });
+      } else if (step === 2) {
+        // 验证道路属性，仅验证市政道路的必填项
+        if (projectType === 'municipal') {
+          isValid = validateTruckRate() && validateSignalSpacing();
+        } else {
+          // 公路项目跳过验证
+          isValid = true;
+        }
+      }
+      
+      return isValid;
+    }
+    
+    // 验证大车率
+    function validateTruckRate() {
+      // 公路项目不验证
+      if (projectType === 'highway') return true;
+      
+      const truckRate = parseFloat(document.getElementById('truck-rate').value);
+      const errorElement = document.getElementById('truck-rate-error');
+      const inputElement = document.getElementById('truck-rate');
+      
+      if (isNaN(truckRate) || truckRate < 0 || truckRate > 50) {
+        errorElement.classList.remove('hidden');
+        inputElement.classList.add('border-danger');
+        inputElement.classList.remove('border-gray-300');
+        return false;
+      } else {
+        errorElement.classList.add('hidden');
+        inputElement.classList.remove('border-danger');
+        inputElement.classList.add('border-gray-300');
+        return true;
+      }
+    }
+    
+    // 验证信号间距
+    function validateSignalSpacing() {
+      // 公路项目不验证
+      if (projectType === 'highway') return true;
+      
+      const spacing = parseInt(document.getElementById('signal-spacing').value);
+      const errorElement = document.getElementById('signal-spacing-error');
+      const inputElement = document.getElementById('signal-spacing');
+      
+      if (isNaN(spacing) || spacing < 150 || spacing > 1500) {
+        errorElement.classList.remove('hidden');
+        inputElement.classList.add('border-danger');
+        inputElement.classList.remove('border-gray-300');
+        return false;
+      } else {
+        errorElement.classList.add('hidden');
+        inputElement.classList.remove('border-danger');
+        inputElement.classList.add('border-gray-300');
+        return true;
+      }
+    }
+    
+    // 验证方向分布系数
+    function validateDirectionFactor() {
+      const factor = parseFloat(document.getElementById('direction-factor').value);
+      const errorElement = document.getElementById('direction-factor-error');
+      
+      if (isNaN(factor) || factor < 0.5 || factor > 0.6) {
+        errorElement.classList.remove('hidden');
+        return false;
+      } else {
+        errorElement.classList.add('hidden');
+        return true;
+      }
+    }
+    
+    // 验证高峰小时系数
+    function validatePeakHourFactor() {
+      const factor = parseFloat(document.getElementById('peak-hour-factor').value);
+      const errorElement = document.getElementById('peak-hour-factor-error');
+      
+      if (isNaN(factor) || factor < 0.08 || factor > 0.16) {
+        errorElement.classList.remove('hidden');
+        return false;
+      } else {
+        errorElement.classList.add('hidden');
+        return true;
+      }
+    }
+    
+    // 验证饱和度最小值
+    function validateSaturationMin() {
+      const min = parseFloat(document.getElementById('saturation-min').value);
+      const max = parseFloat(document.getElementById('saturation-max').value);
+      const errorElement = document.getElementById('saturation-error');
+      
+      if (isNaN(min) || min > max) {
+        errorElement.classList.remove('hidden');
+        return false;
+      } else {
+        errorElement.classList.add('hidden');
+        return true;
+      }
+    }
+    
+    // 验证饱和度最大值
+    function validateSaturationMax() {
+      const min = parseFloat(document.getElementById('saturation-min').value);
+      const max = parseFloat(document.getElementById('saturation-max').value);
+      const errorElement = document.getElementById('saturation-error');
+      
+      if (isNaN(max) || max < min) {
+        errorElement.classList.remove('hidden');
+        return false;
+      } else {
+        errorElement.classList.add('hidden');
+        return true;
+      }
+    }
+    
+    // 更新高级参数可见性
+    function updateAdvancedParamsVisibility() {
+      // 初始化折减系数
+      updateLaneCountReduction();
+      updateLaneWidthReduction();
+      updateTruckReduction();
+      updateSignalReduction();
+    }
+    
+    // 计算交通量
+    function calculateTrafficVolume() {
+      // 验证参数
+      if (!validateStep(3)) {
+        return;
+      }
+      
+      // 获取输入参数
+      const predictionPreference = document.getElementById('prediction-preference').value;
+      const roadClass = document.getElementById('road-class').value;
+      const designSpeed = parseInt(document.getElementById('design-speed').value);
+      const serviceLevel = document.getElementById('service-level').value;
+      const laneCount = parseInt(document.getElementById('lane-count').value);
+      const laneWidth = parseFloat(document.getElementById('lane-width').value);
+      const truckRate = parseFloat(document.getElementById('truck-rate').value);
+      const signalSpacing = parseInt(document.getElementById('signal-spacing').value);
+      const directionFactor = parseFloat(document.getElementById('direction-factor').value);
+      
+      // 交通饱和度范围
+      const saturationMin = parseFloat(document.getElementById('saturation-min').value);
+      const saturationMax = parseFloat(document.getElementById('saturation-max').value);
+      
+      // 根据预测偏好确定取值范围比例 - 修复计算逻辑
+      let rangeStart, rangeEnd;
+      switch(predictionPreference) {
+        case 'conservative':
+          rangeStart = 0;
+          rangeEnd = 0.33;
+          break;
+        case 'moderate':
+          rangeStart = 0.34;
+          rangeEnd = 0.66;
+          break;
+        case 'aggressive':
+          rangeStart = 0.67;
+          rangeEnd = 1.0;
+          break;
+      }
+      
+      // 计算实际使用的饱和度 - 修复计算逻辑
+      const saturationRange = saturationMax - saturationMin;
+      const calcSaturationMin = saturationMin + saturationRange * rangeStart;
+      const calcSaturationMax = saturationMin + saturationRange * rangeEnd;
+      
+      // 获取基准通行能力
+      let baseCapacity;
+      if (projectType === 'highway') {
+        baseCapacity = projectConfigs.highway.baseCapacities[roadClass][designSpeed];
+      } else {
+        baseCapacity = projectConfigs.municipal.baseCapacities[roadClass][designSpeed];
+      }
+      
+      // 获取折减系数
+      const laneCountReductionVal = laneCountReduction[laneCount];
+      
+      // 计算交通量
+      let trafficMin, trafficMax, unit;
+      calculationSteps = []; // 重置计算步骤
+      
+      if (projectType === 'highway') {
+        // 公路项目计算 - 年平均日交通量(pcu/d)
+        const peakHourFactor = parseFloat(document.getElementById('peak-hour-factor').value);
+        
+        // 公式：预测交通量 = 交通饱和度 × 单车道基准通行能力 × 车道数折减系数 ÷ (方向分布系数 × 高峰小时系数)
+        trafficMin = calcSaturationMin * baseCapacity * laneCountReductionVal / (directionFactor * peakHourFactor);
+        trafficMax = calcSaturationMax * baseCapacity * laneCountReductionVal / (directionFactor * peakHourFactor);
+        unit = 'pcu/d'; // 年平均日交通量
+        
+        // 添加计算步骤
+        calculationSteps.push({
+          title: '基础参数',
+          details: [
+            `交通饱和度范围: ${saturationMin} - ${saturationMax}`,
+            `根据${getPreferenceText(predictionPreference)}偏好，实际使用饱和度范围: ${calcSaturationMin.toFixed(3)} - ${calcSaturationMax.toFixed(3)}`,
+            `单车道基准通行能力: ${baseCapacity} pcu/h`,
+            `车道数折减系数: ${laneCountReductionVal}`,
+            `方向分布系数: ${directionFactor}`,
+            `高峰小时系数: ${peakHourFactor}`
+          ]
+        });
+        
+        calculationSteps.push({
+          title: '计算公式',
+          details: [
+            `预测交通量 = 交通饱和度 × 单车道基准通行能力 × 车道数折减系数 ÷ (方向分布系数 × 高峰小时系数)`
+          ]
+        });
+        
+        calculationSteps.push({
+          title: '计算过程',
+          details: [
+            `最小值 = ${calcSaturationMin.toFixed(3)} × ${baseCapacity} × ${laneCountReductionVal} ÷ (${directionFactor} × ${peakHourFactor}) = ${trafficMin.toFixed(0)} ${unit}`,
+            `最大值 = ${calcSaturationMax.toFixed(3)} × ${baseCapacity} × ${laneCountReductionVal} ÷ (${directionFactor} × ${peakHourFactor}) = ${trafficMax.toFixed(0)} ${unit}`
+          ]
+        });
+        
+      } else {
+        // 市政道路项目计算 - 高峰小时交通量(pcu/h)
+        const roadTypeReductionVal = parseFloat(document.getElementById('road-type-reduction').value);
+        const laneWidthReductionVal = parseFloat(document.getElementById('lane-width-reduction').value);
+        const truckReductionVal = parseFloat(document.getElementById('truck-reduction').value);
+        
+        let signalReductionVal = 1.0;
+        if (roadClass !== 'express') {
+          signalReductionVal = parseFloat(document.getElementById('signal-reduction').value);
+        }
+        
+        let trafficFormula;
+        if (roadClass === 'express') {
+          // 城市快速路公式
+          trafficMin = calcSaturationMin * baseCapacity * roadTypeReductionVal * laneCountReductionVal * laneWidthReductionVal * truckReductionVal / directionFactor;
+          trafficMax = calcSaturationMax * baseCapacity * roadTypeReductionVal * laneCountReductionVal * laneWidthReductionVal * truckReductionVal / directionFactor;
+          
+          trafficFormula = `预测交通量 = 交通饱和度 × 单车道基本通行能力 × 道路分类折减系数 × 车道数折减系数 × 车道宽度折减系数 × 大车率折减系数 ÷ 方向分布系数`;
+          
+          unit = 'pcu/h'; // 高峰小时交通量
+          calculationSteps.push({
+            title: '计算过程',
+            details: [
+              `最小值 = ${calcSaturationMin.toFixed(3)} × ${baseCapacity} × ${roadTypeReductionVal} × ${laneCountReductionVal} × ${laneWidthReductionVal} × ${truckReductionVal} ÷ ${directionFactor} = ${trafficMin.toFixed(0)} ${unit}`,
+              `最大值 = ${calcSaturationMax.toFixed(3)} × ${baseCapacity} × ${roadTypeReductionVal} × ${laneCountReductionVal} × ${laneWidthReductionVal} × ${truckReductionVal} ÷ ${directionFactor} = ${trafficMax.toFixed(0)} ${unit}`
+            ]
+          });
+        } else {
+          // 城市主干路及以下公式
+          trafficMin = calcSaturationMin * baseCapacity * roadTypeReductionVal * laneCountReductionVal * laneWidthReductionVal * truckReductionVal * signalReductionVal / directionFactor;
+          trafficMax = calcSaturationMax * baseCapacity * roadTypeReductionVal * laneCountReductionVal * laneWidthReductionVal * truckReductionVal * signalReductionVal / directionFactor;
+          
+          trafficFormula = `预测交通量 = 交通饱和度 × 单车道基本通行能力 × 道路分类折减系数 × 车道数折减系数 × 车道宽度折减系数 × 大车率折减系数 × 平均灯控间距折减系数 ÷ 方向分布系数`;
+          
+          unit = 'pcu/h'; // 高峰小时交通量
+          calculationSteps.push({
+            title: '计算过程',
+            details: [
+              `最小值 = ${calcSaturationMin.toFixed(3)} × ${baseCapacity} × ${roadTypeReductionVal} × ${laneCountReductionVal} × ${laneWidthReductionVal} × ${truckReductionVal} × ${signalReductionVal} ÷ ${directionFactor} = ${trafficMin.toFixed(0)} ${unit}`,
+              `最大值 = ${calcSaturationMax.toFixed(3)} × ${baseCapacity} × ${roadTypeReductionVal} × ${laneCountReductionVal} × ${laneWidthReductionVal} × ${truckReductionVal} × ${signalReductionVal} ÷ ${directionFactor} = ${trafficMax.toFixed(0)} ${unit}`
+            ]
+          });
+        }
+        
+        unit = 'pcu/h'; // 高峰小时交通量
+        
+        // 添加计算步骤
+        calculationSteps.push({
+          title: '基础参数',
+          details: [
+            `交通饱和度范围: ${saturationMin} - ${saturationMax}`,
+            `根据${getPreferenceText(predictionPreference)}偏好，实际使用饱和度范围: ${calcSaturationMin.toFixed(3)} - ${calcSaturationMax.toFixed(3)}`,
+            `单车道基本通行能力: ${baseCapacity} pcu/h`,
+            `道路分类折减系数: ${roadTypeReductionVal}`,
+            `车道数折减系数: ${laneCountReductionVal}`,
+            `车道宽度折减系数: ${laneWidthReductionVal}`,
+            `大车率折减系数: ${truckReductionVal}`,
+            roadClass !== 'express' ? `平均灯控间距折减系数: ${signalReductionVal}` : '',
+            `方向分布系数: ${directionFactor}`
+          ].filter(Boolean) // 过滤空值
+        });
+        
+        calculationSteps.push({
+          title: '计算公式',
+          details: [trafficFormula]
+        });
+      }
+      
+      // 四舍五入结果
+      trafficMin = Math.round(trafficMin);
+      trafficMax = Math.round(trafficMax);
+      
+      // 更新结果显示
+      updateResultDisplay(
+        predictionPreference, 
+        roadClass, 
+        designSpeed, 
+        serviceLevel, 
+        laneCount, 
+        trafficMin, 
+        trafficMax, 
+        unit,
+        calculationSteps
+      );
+      
+      // 显示结果界面
+      showSection('result-display');
+      hideSection('parameter-input');
+    }
+    
+    // 更新结果显示
+    function updateResultDisplay(preference, roadClass, designSpeed, serviceLevel, laneCount, trafficMin, trafficMax, unit, steps) {
+      // 保存计算步骤
+      calculationSteps = steps;
+      
+      // 项目类型文本
+      const projectTypeText = projectType === 'highway' ? '公路项目' : '市政道路项目';
+      
+      // 道路等级文本
+      const roadClassObj = projectConfigs[projectType].roadClasses.find(rc => rc.value === roadClass);
+      const roadClassText = roadClassObj ? roadClassObj.text : '';
+      
+      // 服务水平文本
+      const serviceLevelObj = projectConfigs[projectType].serviceLevels.find(sl => sl.value === serviceLevel);
+      const serviceLevelText = serviceLevelObj ? serviceLevelObj.text : '';
+      
+      // 预测偏好文本
+      const preferenceText = getPreferenceText(preference);
+      
+      // 更新结果信息
+      document.getElementById('result-project-type').textContent = projectTypeText;
+      document.getElementById('result-road-class').textContent = roadClassText;
+      document.getElementById('result-design-speed').textContent = `${designSpeed} km/h`;
+      document.getElementById('result-service-level').textContent = serviceLevelText;
+      document.getElementById('result-lane-count').textContent = `${laneCount}车道`;
+      document.getElementById('result-preference').textContent = preferenceText;
+      
+      // 更新交通量结果
+      document.getElementById('result-traffic-min').textContent = trafficMin.toLocaleString();
+      document.getElementById('result-traffic-max').textContent = trafficMax.toLocaleString();
+      document.getElementById('result-unit').textContent = unit;
+      
+      // 更新参考范围（仅公路项目）
+      if (projectType === 'highway') {
+        document.getElementById('reference-range').classList.remove('hidden');
+        document.getElementById('reference-range-text').textContent = projectConfigs.highway.referenceRanges[roadClass];
+      } else {
+        document.getElementById('reference-range').classList.add('hidden');
+      }
+      
+      // 生成图表
+      generateResultChart(trafficMin, trafficMax, unit);
+      
+      // 保存计算步骤供明细查看
+      saveCalculationDetails(steps, preferenceText, roadClassText, designSpeed, serviceLevelText, laneCount, unit);
+    }
+    
+    // 获取预测偏好文本
+    function getPreferenceText(preference) {
+      switch(preference) {
+        case 'conservative': return '保守';
+        case 'moderate': return '适中';
+        case 'aggressive': return '激进';
+        default: return '';
+      }
+    }
+    
+    // 生成结果图表
+    function generateResultChart(min, max, unit) {
+      const ctx = document.getElementById('result-chart').getContext('2d');
+      
+      // 如果已有图表，销毁它
+      if (chart) {
+        chart.destroy();
+      }
+      
+      // 创建新图表
+      chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ['预测交通量区间'],
+          datasets: [{
+            label: unit,
+            data: [max],
+            backgroundColor: 'rgba(22, 93, 255, 0.2)',
+            borderColor: 'rgba(22, 93, 255, 1)',
+            borderWidth: 1
+          }, {
+            label: '最小值',
+            data: [min],
+            backgroundColor: 'rgba(22, 93, 255, 0.6)',
+            borderColor: 'rgba(22, 93, 255, 1)',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: {
+              beginAtZero: true,
+              title: {
+                display: true,
+                text: unit
+              }
+            }
+          },
+          plugins: {
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  let label = context.dataset.label || '';
+                  if (label) {
+                    label += ': ';
+                  }
+                  if (context.parsed.y !== null) {
+                    label += context.parsed.y.toLocaleString() + ' ' + unit;
+                  }
+                  return label;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+    
+    // 保存计算明细
+    function saveCalculationDetails(steps, preference, roadClass, designSpeed, serviceLevel, laneCount, unit) {
+      const detailsContainer = document.getElementById('calculation-details');
+      detailsContainer.innerHTML = '';
+      
+      // 添加项目信息
+      const infoSection = document.createElement('div');
+      infoSection.className = 'bg-neutral p-4 rounded-lg mb-6';
+      infoSection.innerHTML = `
+        <h4 class="font-medium mb-3">项目信息</h4>
+        <div class="grid grid-cols-2 gap-2 text-sm">
+          <div><span class="text-gray-500">项目类型：</span>${projectType === 'highway' ? '公路项目' : '市政道路项目'}</div>
+          <div><span class="text-gray-500">道路等级：</span>${roadClass}</div>
+          <div><span class="text-gray-500">设计速度：</span>${designSpeed} km/h</div>
+          <div><span class="text-gray-500">服务水平：</span>${serviceLevel}</div>
+          <div><span class="text-gray-500">设计车道数：</span>${laneCount}车道</div>
+          <div><span class="text-gray-500">预测偏好：</span>${preference}</div>
+        </div>
+      `;
+      detailsContainer.appendChild(infoSection);
+      
+      // 添加计算步骤
+      steps.forEach((step, index) => {
+        const stepSection = document.createElement('div');
+        stepSection.className = 'mb-6';
+        stepSection.innerHTML = `
+          <h4 class="font-medium mb-3">${index + 1}. ${step.title}</h4>
+          <ul class="list-disc pl-5 space-y-1 text-sm text-gray-700">
+            ${step.details.map(detail => `<li>${detail}</li>`).join('')}
+          </ul>
+        `;
+        detailsContainer.appendChild(stepSection);
+      });
+      
+      // 添加结果总结
+      const resultMin = parseInt(document.getElementById('result-traffic-min').textContent.replace(/,/g, ''));
+      const resultMax = parseInt(document.getElementById('result-traffic-max').textContent.replace(/,/g, ''));
+      
+      const resultSection = document.createElement('div');
+      resultSection.className = 'bg-primary/5 p-4 rounded-lg border border-primary/20';
+      resultSection.innerHTML = `
+        <h4 class="font-medium mb-3 text-primary">计算结果</h4>
+        <p class="text-center text-lg font-semibold">
+          预测交通量区间：${resultMin.toLocaleString()} - ${resultMax.toLocaleString()} ${unit}
+        </p>
+      `;
+      detailsContainer.appendChild(resultSection);
+    }
+    
+    // 显示计算明细
+    function showCalculationDetails() {
+      document.getElementById('details-modal').classList.remove('hidden');
+    }
+    
+    // 隐藏计算明细
+    function hideCalculationDetails() {
+      document.getElementById('details-modal').classList.add('hidden');
+    }
+    
+    // 导出报告
+    function exportReport() {
+      // 显示加载状态
+      const exportButton = document.querySelector('button[onclick="exportReport()"]');
+      const originalText = exportButton.innerHTML;
+      exportButton.innerHTML = '<i class="fa fa-spinner fa-spin mr-1"></i> 正在生成报告...';
+      exportButton.disabled = true;
+      
+      // 确保计算步骤已准备好
+      if (!calculationSteps || calculationSteps.length === 0) {
+        alert('没有计算数据可导出，请先完成交通量计算');
+        exportButton.innerHTML = originalText;
+        exportButton.disabled = false;
+        return;
+      }
+      
+      // 填充PDF内容
+      populatePdfContent();
+      
+      // 短暂延迟确保DOM已更新
+      setTimeout(() => {
+        // 获取PDF容器
+        const pdfContainer = document.getElementById('pdf-container');
+        
+        // 创建一个临时div用于渲染
+        const tempDiv = document.createElement('div');
+        tempDiv.style.position = 'absolute';
+        tempDiv.style.top = '-9999px';
+        tempDiv.style.left = '-9999px';
+        tempDiv.style.width = '210mm';
+        tempDiv.style.height = 'auto';
+        document.body.appendChild(tempDiv);
+        
+        // 克隆PDF内容到临时div
+        const pdfClone = pdfContainer.cloneNode(true);
+        pdfClone.style.display = 'block';
+        tempDiv.appendChild(pdfClone);
+        
+        // 使用html2canvas生成PDF
+        html2canvas(pdfClone, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          windowWidth: 816, // A4宽度的像素值(210mm * 3.9)
+          windowHeight: pdfClone.scrollHeight
+        }).then(canvas => {
+          // 清理临时元素
+          document.body.removeChild(tempDiv);
+          
+          // 转换canvas为图像
+          const imgData = canvas.toDataURL('image/jpeg', 1.0);
+          
+          // 计算PDF页面尺寸
+          const imgWidth = 210; // A4宽度(mm)
+          const imgHeight = canvas.height * imgWidth / canvas.width;
+          
+          // 创建PDF文档
+          const { jsPDF } = window.jspdf;
+          const pdf = new jsPDF('p', 'mm', 'a4');
+          
+          // 处理长内容分页
+          let heightLeft = imgHeight;
+          let position = 0;
+          
+          while (heightLeft > 0) {
+            pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, Math.min(297, heightLeft));
+            heightLeft -= 297;
+            position -= 297;
+            
+            if (heightLeft > 0) {
+              pdf.addPage();
+            }
+          }
+          
+          // 保存PDF
+          const projectTypeText = projectType === 'highway' ? '公路' : '市政道路';
+          const roadClassText = document.getElementById('result-road-class').textContent;
+          const fileName = `${projectTypeText}_${roadClassText}_交通量估算报告.pdf`;
+          
+          // 尝试保存PDF
+          try {
+            pdf.save(fileName);
+          } catch (e) {
+            console.error('PDF保存失败:', e);
+            // 备选方案：打开PDF在新窗口
+            const dataUri = pdf.output('datauristring');
+            const newWindow = window.open();
+            newWindow.document.write(`<iframe width="100%" height="100%" src="${dataUri}"></iframe>`);
+          }
+          
+          // 恢复按钮状态
+          setTimeout(() => {
+            exportButton.innerHTML = originalText;
+            exportButton.disabled = false;
+          }, 1000);
+        }).catch(error => {
+          console.error('PDF生成失败:', error);
+          alert('报告生成失败，请重试');
+          // 清理临时元素
+          document.body.removeChild(tempDiv);
+          // 恢复按钮状态
+          exportButton.innerHTML = originalText;
+          exportButton.disabled = false;
+        });
+      }, 800); // 增加延迟确保内容正确渲染
+    }
+    
+    // 填充PDF内容
+    function populatePdfContent() {
+      // 设置日期
+      const now = new Date();
+      const dateStr = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
+      document.getElementById('pdf-date').textContent = `报告生成日期：${dateStr}`;
+      
+      // 填充项目基本信息
+      const projectInfoTable = document.getElementById('pdf-project-info');
+      projectInfoTable.innerHTML = `
+        <tr>
+          <th>项目类型</th>
+          <td>${document.getElementById('result-project-type').textContent}</td>
+          <th>道路等级</th>
+          <td>${document.getElementById('result-road-class').textContent}</td>
+        </tr>
+        <tr>
+          <th>设计速度</th>
+          <td>${document.getElementById('result-design-speed').textContent}</td>
+          <th>服务水平</th>
+          <td>${document.getElementById('result-service-level').textContent}</td>
+        </tr>
+        <tr>
+          <th>设计车道数</th>
+          <td>${document.getElementById('result-lane-count').textContent}</td>
+          <th>预测偏好</th>
+          <td>${document.getElementById('result-preference').textContent}</td>
+        </tr>
+      `;
+      
+      // 填充计算参数
+      const paramsTable = document.getElementById('pdf-parameters');
+      
+      // 基础参数
+      const predictionPreference = document.getElementById('prediction-preference').options[document.getElementById('prediction-preference').selectedIndex].text;
+      const designSpeed = document.getElementById('design-speed').value;
+      const directionFactor = document.getElementById('direction-factor').value;
+      
+      let paramsHtml = `
+        <tr>
+          <th>预测偏好</th>
+          <td>${predictionPreference}</td>
+          <th>设计速度</th>
+          <td>${designSpeed} km/h</td>
+        </tr>
+        <tr>
+          <th>方向分布系数</th>
+          <td>${directionFactor}</td>
+          <th>设计车道宽度</th>
+          <td>${document.getElementById('lane-width').value} 米</td>
+        </tr>
+      `;
+      
+      // 根据项目类型添加不同参数
+      if (projectType === 'highway') {
+        // 公路项目特有参数
+        paramsHtml += `
+          <tr>
+            <th>高峰小时系数</th>
+            <td>${document.getElementById('peak-hour-factor').value}</td>
+            <th>车道数折减系数</th>
+            <td>${document.getElementById('lane-count-reduction').value}</td>
+          </tr>
+        `;
+      } else {
+        // 市政道路特有参数
+        paramsHtml += `
+          <tr>
+            <th>大车率</th>
+            <td>${document.getElementById('truck-rate').value}%</td>
+            <th>平均灯控间距</th>
+            <td>${document.getElementById('signal-spacing').value} 米</td>
+          </tr>
+          <tr>
+            <th>道路分类折减系数</th>
+            <td>${document.getElementById('road-type-reduction').value}</td>
+            <th>车道数折减系数</th>
+            <td>${document.getElementById('lane-count-reduction').value}</td>
+          </tr>
+          <tr>
+            <th>车道宽度折减系数</th>
+            <td>${document.getElementById('lane-width-reduction').value}</td>
+            <th>大车率折减系数</th>
+            <td>${document.getElementById('truck-reduction').value}</td>
+          </tr>
+        `;
+        
+        // 非快速路添加信号间距折减系数
+        if (document.getElementById('road-class').value !== 'express') {
+          paramsHtml += `
+            <tr>
+              <th>平均灯控间距折减系数</th>
+              <td>${document.getElementById('signal-reduction').value}</td>
+              <th>&nbsp;</th>
+              <td>&nbsp;</td>
+            </tr>
+          `;
+        }
+      }
+      
+      paramsTable.innerHTML = paramsHtml;
+      
+      // 填充估算结果
+      const resultMin = document.getElementById('result-traffic-min').textContent;
+      const resultMax = document.getElementById('result-traffic-max').textContent;
+      const unit = document.getElementById('result-unit').textContent;
+      document.getElementById('pdf-result-value').textContent = `${resultMin} ~ ${resultMax} ${unit}`;
+      
+      // 填充参考范围
+      const referenceRangeEl = document.getElementById('reference-range');
+      const pdfReferenceRange = document.getElementById('pdf-reference-range');
+      if (referenceRangeEl.classList.contains('hidden')) {
+        pdfReferenceRange.innerHTML = '';
+      } else {
+        pdfReferenceRange.innerHTML = `<strong>参考范围：</strong>${document.getElementById('reference-range-text').textContent}`;
+      }
+      
+      // 填充计算过程
+      const calculationStepsEl = document.getElementById('pdf-calculation-steps');
+      calculationStepsEl.innerHTML = '';
+      
+      // 确保计算步骤存在
+      if (calculationSteps && calculationSteps.length > 0) {
+        calculationSteps.forEach((step, index) => {
+          const stepDiv = document.createElement('div');
+          stepDiv.className = 'calculation-step';
+          
+          // 创建步骤标题
+          const titleDiv = document.createElement('div');
+          titleDiv.className = 'calculation-step-title';
+          titleDiv.textContent = `${index + 1}. ${step.title}`;
+          stepDiv.appendChild(titleDiv);
+          
+          // 创建步骤内容列表
+          const contentDiv = document.createElement('div');
+          contentDiv.className = 'calculation-step-content';
+          
+          const list = document.createElement('ul');
+          list.style.listStyleType = 'disc';
+          list.style.marginLeft = '20px';
+          
+          step.details.forEach(detail => {
+            const listItem = document.createElement('li');
+            listItem.textContent = detail;
+            list.appendChild(listItem);
+          });
+          
+          contentDiv.appendChild(list);
+          stepDiv.appendChild(contentDiv);
+          
+          calculationStepsEl.appendChild(stepDiv);
+        });
+      } else {
+        // 如果没有计算步骤，显示提示信息
+        calculationStepsEl.innerHTML = '<p>没有可用的计算过程数据。请重新计算交通量。</p>';
+      }
+    }
+    
+    // 修改参数
+    function modifyParameters() {
+      // 隐藏结果显示界面，显示参数输入界面
+      hideSection('result-display');
+      showSection('parameter-input');
+      
+      // 重置步骤和进度
+      currentStep = 1;
+      document.getElementById('step1-indicator').className = 'w-10 h-10 rounded-full border-2 step-active flex items-center justify-center mb-2';
+      document.getElementById('step2-indicator').className = 'w-10 h-10 rounded-full border-2 step-inactive flex items-center justify-center mb-2';
+      document.getElementById('step3-indicator').className = 'w-10 h-10 rounded-full border-2 step-inactive flex items-center justify-center mb-2';
+      document.getElementById('progress-1-2').style.width = '0%';
+      document.getElementById('progress-2-3').style.width = '0%';
+      
+      // 重置步骤显示
+      document.getElementById('step1').classList.remove('hidden');
+      document.getElementById('step2').classList.add('hidden');
+      document.getElementById('step3').classList.add('hidden');
+      
+      // 确保参数可用性设置正确
+      setParameterAvailability();
+    }
+    
+    // 重置所有
+    function resetAll() {
+      // 重置步骤和进度
+      currentStep = 1;
+      document.getElementById('step1-indicator').className = 'w-10 h-10 rounded-full border-2 step-active flex items-center justify-center mb-2';
+      document.getElementById('step2-indicator').className = 'w-10 h-10 rounded-full border-2 step-inactive flex items-center justify-center mb-2';
+      document.getElementById('step3-indicator').className = 'w-10 h-10 rounded-full border-2 step-inactive flex items-center justify-center mb-2';
+      document.getElementById('progress-1-2').style.width = '0%';
+      document.getElementById('progress-2-3').style.width = '0%';
+      
+      // 显示项目选择界面，隐藏其他界面
+      showSection('project-selection');
+      hideSection('parameter-input');
+      hideSection('result-display');
+      hideCalculationDetails();
+      
+      // 重置项目类型
+      projectType = '';
+      document.getElementById('highway-card').classList.remove('ring-2', 'ring-primary');
+      document.getElementById('municipal-card').classList.remove('ring-2', 'ring-secondary');
+      
+      // 重置步骤显示
+      document.getElementById('step1').classList.remove('hidden');
+      document.getElementById('step2').classList.add('hidden');
+      document.getElementById('step3').classList.add('hidden');
+      
+      // 重置表单元素状态
+      document.getElementById('truck-rate').disabled = false;
+      document.getElementById('signal-spacing').disabled = false;
+      document.getElementById('truck-rate-container').classList.remove('disabled-row');
+      document.getElementById('signal-spacing-container').classList.remove('disabled-row');
+      
+      // 重置计算步骤
+      calculationSteps = [];
+    }
+    
+    // 显示指定区域
+    function showSection(id) {
+      document.getElementById(id).classList.remove('hidden');
+    }
+    
+    // 隐藏指定区域
+    function hideSection(id) {
+      document.getElementById(id).classList.add('hidden');
+    }
+  </script>
+</body>
+</html>
